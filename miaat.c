@@ -6,8 +6,13 @@
 #define SEQNUM 1e4
 #define KMERSIZE 5
 
+typedef struct _Kmer {
+	int count;
+	char seq[KMERSIZE+1];
+} Kmer;
+
 char **matrix;
-int *kmers;
+Kmer *kmers;
 
 int readfirstN(char *filename, int maxseq){
 	FILE   *seqfile;
@@ -90,28 +95,44 @@ int nuc2int(char nucl){
 void int2nuc(int index, char *nuc){
 	int num = index;
 	int m;
+	int i;
+
+	for(i = 0; i < KMERSIZE; i++){
+		nuc[i] = 'A';
+	}
+	nuc[KMERSIZE] = '\0';
+	i = 0;
 
 	while(num != 0){
 		m = num % 4;
 		num = num / 4;
 		switch(m){
 			case 0:
-				printf("A");
+				nuc[i] = 'A';
 				break;
 			case 1:
-				printf("C");
+				nuc[i] = 'C';
 				break;
 			case 2:
-				printf("T");
+				nuc[i] = 'T';
 				break;
 			case 3:
-				printf("G");
+				nuc[i] = 'G';
 		};
+		i++;
 	}
-	printf(" ");
 }
 
-void calckmers(){
+void fillkmers(){
+	int i;
+
+	for(i = 0; i < pow(4, KMERSIZE); i++){
+		int2nuc(i, kmers[i].seq);
+		kmers[i].count = 0;
+	}
+}
+
+void countkmers(){
 	unsigned int i;
 	unsigned int j;
 	unsigned int k;
@@ -120,7 +141,7 @@ void calckmers(){
 	int index;
 
 	for(i = 0; i < SEQNUM; i++){
-		for(j = 0; j < strlen(matrix[i]) - KMERSIZE; j++){
+		for(j = 0; j < strlen(matrix[i]) - KMERSIZE + 1; j++){
 			index = 0;
 			for(k = j, l = 1; k < j + KMERSIZE; k++, l *= 4){
 				r = nuc2int(matrix[i][k]);
@@ -130,10 +151,43 @@ void calckmers(){
 				index += r * l;
 			}
 			if(r >= 0){
-				kmers[index] += 1;
+				kmers[index].count += 1;
 			}
 		}
 	}
+}
+
+void swapkmers(Kmer *kmers, int first, int second){
+	int swapcount;
+	char swapseq[KMERSIZE+1];
+
+	swapcount = kmers[first].count;
+	strncpy(swapseq, kmers[first].seq, KMERSIZE);
+
+	kmers[first].count = kmers[second].count;
+	strncpy(kmers[first].seq, kmers[second].seq, KMERSIZE);
+
+	kmers[second].count = swapcount;
+	strncpy(kmers[second].seq, swapseq, KMERSIZE);
+}
+
+void quicksort(Kmer *kmers, int left, int right){
+	int i = left;
+	int j = right;
+	int pivot = kmers[(left + right) / 2].count;
+
+	while(i <= j){
+		while(kmers[i].count < pivot) i++;
+		while(kmers[j].count > pivot) j--;
+		if(i <= j){
+			swapkmers(kmers, i, j);
+			i++;
+			j--;
+		}
+	}
+
+	if(left < j) quicksort(kmers, left, j);
+	if(right > i) quicksort(kmers, i, right);
 }
 
 int main(int argc, char **argv){
@@ -155,13 +209,18 @@ int main(int argc, char **argv){
 		return(2);
 	}
 
-	kmers = calloc(pow(4, KMERSIZE), sizeof(int));
+	kmers = malloc(pow(4, KMERSIZE) * sizeof(Kmer));
 	if(kmers == NULL){
 		fprintf(stderr, "Not enough memory for this kmer size\n");
 		return(3);
 	}
-	calckmers();
+	fillkmers();
+	countkmers();
+	quicksort(kmers, 0, pow(4, KMERSIZE)-1);
 
+	for(r = 0; r < pow(4, KMERSIZE); r++){
+		printf("%s %d\n", kmers[r].seq, kmers[r].count);
+	}
 	free(kmers);
 
 	return(EXIT_SUCCESS);
