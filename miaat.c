@@ -190,6 +190,71 @@ void quicksort(Kmer *kmers, int left, int right){
 	if(right > i) quicksort(kmers, i, right);
 }
 
+void buildadaptor(){
+	int i, j, k;
+	int *pos;
+	int found;
+	int fcount;
+	char nuc;
+	int dist[4];
+
+	pos = malloc(sizeof(int) * SEQNUM);
+
+	/* Find the position of the most frequent kmer in the sequence set */
+	for(i = 0; i < SEQNUM; i++){
+		fcount = 0;
+		for(j = 0; j < strlen(matrix[i]) - KMERSIZE; j++){
+			found = 1;
+			for(k = 0; k < KMERSIZE; k++){
+				if(matrix[i][j + k] != kmers[0].seq[k]){
+					found = 0;
+					break;
+				}
+			}
+			if(found){
+				pos[i] = j;
+				fcount++;
+			}
+		}
+		if(fcount != 1){
+			pos[i] = -1;
+		}
+	}
+
+	while(1){
+
+		dist[0] = 0;
+		dist[1] = 0;
+		dist[2] = 0;
+		dist[3] = 0;
+
+		for(i = 0; i < SEQNUM; i++){
+			if(pos[i] > 0){
+				nuc = matrix[i][pos[i] - 1];
+				switch(nuc){
+					case 'A':
+						dist[0]++;
+						break;
+					case 'T':
+						dist[1]++;
+						break;
+					case 'G':
+						dist[2]++;
+						break;
+					case 'C':
+						dist[3]++;
+				};
+			}
+		}
+
+		if(decision(dist)){
+			break;
+		}
+	}
+
+	free(pos);
+}
+
 int main(int argc, char **argv){
 	int r;
 
@@ -217,7 +282,7 @@ int main(int argc, char **argv){
 	fillkmers();
 	countkmers();
 	quicksort(kmers, 0, pow(4, KMERSIZE)-1);
-
+	buildadaptor();
 	for(r = 0; r < pow(4, KMERSIZE); r++){
 		printf("%s %d\n", kmers[r].seq, kmers[r].count);
 	}
