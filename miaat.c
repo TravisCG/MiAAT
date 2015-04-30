@@ -5,6 +5,8 @@
 
 #define SEQNUM 1e4
 #define KMERSIZE 5
+#define ADAPTORLEN 15
+#define MAXMISM 1
 
 typedef struct _Kmer {
 	int count;
@@ -13,6 +15,8 @@ typedef struct _Kmer {
 
 char **matrix;
 Kmer *kmers;
+char adaptor[ADAPTORLEN+1];
+int mod;
 
 int readfirstN(char *filename, int maxseq){
 	FILE   *seqfile;
@@ -22,7 +26,6 @@ int readfirstN(char *filename, int maxseq){
 	int     seqcounter = 0;
 	int     linecount  = 0;
 	int     returncode = 0;
-	int     mod;
 
 	seqfile = fopen(filename, "r");
 	if(seqfile == NULL){
@@ -177,8 +180,8 @@ void quicksort(Kmer *kmers, int left, int right){
 	int pivot = kmers[(left + right) / 2].count;
 
 	while(i <= j){
-		while(kmers[i].count < pivot) i++;
-		while(kmers[j].count > pivot) j--;
+		while(kmers[i].count > pivot) i++;
+		while(kmers[j].count < pivot) j--;
 		if(i <= j){
 			swapkmers(kmers, i, j);
 			i++;
@@ -190,8 +193,37 @@ void quicksort(Kmer *kmers, int left, int right){
 	if(right > i) quicksort(kmers, i, right);
 }
 
+int decision(int *d){
+	int sum;
+
+	sum = d[0] + d[1] + d[2] + d[3];
+	if(((d[0] * 100 / sum > 90) || (d[1] * 100 / sum > 90) || (d[2] * 100 / sum > 90) || (d[3] * 100 / sum > 90)) && (sum > 40)){
+		return(1);
+	}
+	return(0);
+}
+
+void nucdist(char nuc, int *dist){
+	switch(nuc){
+		case 'A':
+			dist[0]++;
+			break;
+		case 'T':
+			dist[1]++;
+			break;
+		case 'G':
+			dist[2]++;
+			break;
+		case 'C':
+			dist[3]++;
+			break;
+	};
+
+}
+
 void buildadaptor(){
-	int i, j, k;
+	int i, k;
+	unsigned int j;
 	int *pos;
 	int found;
 	int fcount;
@@ -221,6 +253,7 @@ void buildadaptor(){
 		}
 	}
 
+	/* Extends the positions to five prime */
 	while(1){
 
 		dist[0] = 0;
@@ -230,29 +263,92 @@ void buildadaptor(){
 
 		for(i = 0; i < SEQNUM; i++){
 			if(pos[i] > 0){
-				nuc = matrix[i][pos[i] - 1];
-				switch(nuc){
-					case 'A':
-						dist[0]++;
-						break;
-					case 'T':
-						dist[1]++;
-						break;
-					case 'G':
-						dist[2]++;
-						break;
-					case 'C':
-						dist[3]++;
-				};
+				nuc = matrix[i][pos[i]];
+				nucdist(nuc, dist);
 			}
+			pos[i]--;
 		}
 
-		if(decision(dist)){
+		if(decision(dist) == 0){
 			break;
 		}
 	}
 
+	/* Build adaptor */
+	for(j = 0; j < ADAPTORLEN; j++){
+
+		dist[0] = 0;
+		dist[1] = 0;
+		dist[2] = 0;
+		dist[3] = 0;
+
+		for(i = 0; i < SEQNUM; i++){
+			if(pos[i] > 0){
+				nuc = matrix[i][pos[i]+2+j];
+				nucdist(nuc, dist);
+				if(dist[0] > dist[1] && dist[0] > dist[2] && dist[0] > dist[3]){
+					adaptor[j] = 'A';
+				}
+				else if(dist[1] > dist[0] && dist[1] > dist[2] && dist[1] > dist[3]){
+					adaptor[j] = 'T';
+				}
+				else if(dist[2] > dist[0] && dist[2] > dist[1] && dist[2] > dist[3]){
+					adaptor[j] = 'G';
+				}
+				else{
+					adaptor[j] = 'C';
+				}
+			}
+		}
+	}
+
 	free(pos);
+}
+
+void cutseq(char *seq, ssize_t len){
+	int i, j;
+	int mismatch;
+
+	for(i = 0; i < len - ADAPTORLEN; i++){
+		mismatch = 0;
+		for(j = 0; j < ADAPTORLEN; j++){
+			if(seq[i + j] != adaptor[j]){
+				mismatch++;
+				if(mismatch > MAXMISM){
+					break;
+				}
+			}
+		}
+		if(mismatch <= MAXMISM){
+			seq[i] = '\n';
+			seq[i+1] = '\0';
+			break;
+		}
+	}
+	printf("%s", seq);
+}
+
+void cutadaptor(char *filename){
+	FILE *seqfile;
+	char *line = NULL;
+	size_t len;
+	ssize_t readed;
+	int linecount = 0;
+
+	seqfile = fopen(filename, "r");
+
+	while( (readed = getline(&line, &len, seqfile)) != -1){
+		if(linecount % mod == 1){
+			cutseq(line, readed);
+		}
+		else{
+			printf("%s", line);
+		}
+		linecount++;
+	}
+	fclose(seqfile);
+
+	free(line);
 }
 
 int main(int argc, char **argv){
@@ -283,9 +379,8 @@ int main(int argc, char **argv){
 	countkmers();
 	quicksort(kmers, 0, pow(4, KMERSIZE)-1);
 	buildadaptor();
-	for(r = 0; r < pow(4, KMERSIZE); r++){
-		printf("%s %d\n", kmers[r].seq, kmers[r].count);
-	}
+	adaptor[ADAPTORLEN] = '\0';
+	cutadaptor(argv[1]);
 	free(kmers);
 
 	return(EXIT_SUCCESS);
